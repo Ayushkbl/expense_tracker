@@ -1,39 +1,31 @@
-from pydantic import BaseModel, EmailStr
 from datetime import datetime
+from pydantic import EmailStr
+from pytz import timezone
+
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String
-from pydantic import BaseModel
-from typing import Optional
+from sqlalchemy import String, func
 
 from expense_tracker.db import Model
-from expense_tracker.expense.models import Expense
 
 class User(Model):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str]
-    username: Mapped[str]
-    email: Mapped[EmailStr] = mapped_column(String(325))
+    name: Mapped[str] = mapped_column(default=None)
+    username: Mapped[str] = mapped_column(String(200), index=True)
+    email: Mapped[EmailStr] = mapped_column(String(325), index=True)
     password_hash: Mapped[str]
-    created_at: Mapped[datetime]
-    expenses: Mapped[list['Expense']] = relationship(back_populates='user')
+    created_at: Mapped[datetime] = mapped_column(
+            default=lambda: datetime.now(timezone("Asia/Kolkata")).strftime('%Y-%m-%d  %H:%M:%S'),
+            nullable=False
+    )
+    expenses: Mapped[list['Expense']] = relationship(back_populates='user', cascade="all, delete-orphan")
+    is_superuser: Mapped[bool] = mapped_column(default=False)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f'User(id={self.id}, name={self.name}, email={self.email})'
 
-class UserRequest(BaseModel):
-    name: str
-    username: str
-    email: EmailStr
 
-class UserCreate(UserRequest):
-    password_hash: str
-
-class UserResponse(UserRequest):
-    id: int
-    created_at: datetime
-    expenses: Optional[list[Expense]]
 
 
 

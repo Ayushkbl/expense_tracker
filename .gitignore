@@ -1,2 +1,8 @@
 src/expense_tracker/.env
-.venv
+.venv/
+docker/docker-compose.yml
+src/expense_tracker/alembic/versions/
+__pycache__/
+*/__pycache__/
+*/*/__pycache__/
+*/*/*/__pycache__/

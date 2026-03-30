@@ -1,7 +1,7 @@
-import os
-from dotenv import load_dotenv
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+from expense_tracker.config import settings
 
 class Model(DeclarativeBase):
     metadata = MetaData(naming_convention={
@@ -13,7 +13,12 @@ class Model(DeclarativeBase):
     })
 
 
-load_dotenv()
-
-engine = create_engine(os.environ["DATABASE_URL"], echo=True)
+engine = create_engine(settings.database_url, echo=True)
 Session = sessionmaker(engine)
+
+def get_db():
+    session = Session()
+    try:
+        yield session
+    finally:
+        session.close()
