@@ -12,8 +12,8 @@ class User(Model):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(default=None)
-    username: Mapped[str] = mapped_column(String(200), index=True)
-    email: Mapped[EmailStr] = mapped_column(String(325), index=True)
+    username: Mapped[str] = mapped_column(String(200), index=True, unique=True)
+    email: Mapped[EmailStr] = mapped_column(String(325), index=True, unique=True)
     password_hash: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(
             default=lambda: datetime.now(timezone("Asia/Kolkata")).strftime('%Y-%m-%d  %H:%M:%S'),
