@@ -1,9 +1,11 @@
 
-from datetime import date
+from datetime import date, datetime
+from dateutil.relativedelta import relativedelta
+from pytz import timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import  and_, select
+from sqlalchemy import  and_, func, select
 from sqlalchemy.orm import Session
 
 from expense_tracker.auth import CurrentUser
@@ -55,9 +57,9 @@ def get_expense_by_id(
     
     return expense
 
-@router.get('/category/{expense_category}', response_model=list[expense_schema.ExpenseResponse])
+@router.get('/category', response_model=list[expense_schema.ExpenseResponse])
 def get_expense_by_category(
-        expense_category: expense_model.ExpenseCategoryEnum,
+        expense_category: Annotated[expense_schema.ExpenseCategoryEnum, Query()],
         current_user: CurrentUser,
         db: Annotated[Session, Depends(get_db)]
 ):
@@ -78,9 +80,9 @@ def get_expense_by_category(
     
     return expenses
 
-@router.get('/date/{expense_date}', response_model=list[expense_schema.ExpenseResponse])
+@router.get('/date', response_model=list[expense_schema.ExpenseResponse])
 def get_expense_by_date(
-        expense_date: date,
+        expense_date: Annotated[date, Query()],
         current_user: CurrentUser,
         db: Annotated[Session, Depends(get_db)]
 ):
@@ -100,6 +102,67 @@ def get_expense_by_date(
         )
     
     return expenses
+
+@router.get('/summary', response_model=expense_schema.SummaryDetails)
+def get_expense_summary(
+        current_user: CurrentUser,
+        db: Annotated[Session, Depends(get_db)],
+        expense_filter: Annotated[expense_schema.ExpenseFilter | None, Query()] = None
+):
+
+    base_query = select(expense_model.Expense).where(expense_model.Expense.user_id == current_user.id)
+    today = datetime.now(timezone("Asia/Kolkata")).date()
+
+    match expense_filter:
+        case expense_schema.ExpenseFilter.past_week:
+            start_date = today - relativedelta(weeks=1)
+        case expense_schema.ExpenseFilter.past_month:
+            start_date = today - relativedelta(month=1)
+        case expense_schema.ExpenseFilter.last_3_months:
+            start_date = today - relativedelta(months=3)
+        case expense_schema.ExpenseFilter.past_year:
+            start_date = today - relativedelta(years=1)
+        case _:
+            start_date = None
+    
+    if start_date:
+        base_query = base_query.where(expense_model.Expense.expense_date >= start_date)
+    
+    total_amount = db.scalar(
+        select(func.sum(expense_model.Expense.amount))
+        .where(and_(
+            expense_model.Expense.user_id == current_user.id,
+            expense_model.Expense.expense_date >= start_date if start_date else True
+        ))
+    )
+
+    category_result = db.execute(
+        select(func.sum(expense_model.Expense.amount),expense_model.Expense.category)
+        .where(and_(
+            expense_model.Expense.user_id == current_user.id,
+            expense_model.Expense.expense_date >= start_date if start_date else True
+        ))
+        .group_by(expense_model.Expense.category)
+    ).all()
+
+    category_breakdown = expense_schema.ExpenseCategories()
+    for amount, category in category_result:
+        category_name = category.value.lower()
+        setattr(category_breakdown, category_name, amount)
+    
+    expenses = db.scalars(base_query).all()
+    expense_summary = expense_schema.ExpenseSummary(
+        total_amount=total_amount,
+        category_breakdown=category_breakdown
+    )
+
+    return expense_schema.SummaryDetails(
+       expense_summary=expense_summary,
+       all_expenses=expenses,
+       filter_applied=expense_filter.value if expense_filter else None,
+       total_expenses=len(expenses)
+    )
+
 
 @router.post('', response_model=expense_schema.ExpenseResponse)
 def create_expense(

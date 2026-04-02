@@ -5,29 +5,21 @@ from pytz import timezone
 from typing import Optional
 
 from sqlalchemy.orm import Mapped, relationship, mapped_column
-from sqlalchemy import Numeric, String, ForeignKey, FLOAT
+from sqlalchemy import Numeric, String, ForeignKey
 from sqlalchemy import Enum as SqlEnum
 
 from expense_tracker.db import Model
+from expense_tracker.expense import schemas as expense_schemas
 
-class ExpenseCategoryEnum(str, Enum):
-    groceries = "Groceries"
-    leisure = "Leisure"
-    food = "Food"
-    electronics = "Electronics"
-    utilities = "Utilities"
-    clothing = "Clothing"
-    health = "Health"
-    others = "Others"
 
 class Expense(Model):
     __tablename__ = "expenses"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), index=True)
-    category: Mapped[ExpenseCategoryEnum] = mapped_column(SqlEnum(ExpenseCategoryEnum), index=True)
+    category: Mapped[expense_schemas.ExpenseCategoryEnum] = mapped_column(SqlEnum(expense_schemas.ExpenseCategoryEnum), index=True)
     description: Mapped[str | None] = mapped_column(String(320), default=None, nullable=True)
-    expense_date: Mapped[date]
+    expense_date: Mapped[date] = mapped_column(index=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone("Asia/Kolkata")).strftime('%Y-%m-%d  %H:%M:%S'),
         nullable=False
