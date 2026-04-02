@@ -59,5 +59,5 @@ class ExpenseSummary(BaseModel):
 class SummaryDetails(BaseModel):
     expense_summary: ExpenseSummary
     all_expenses: list[ExpenseResponse]
-    filter_applied: ExpenseFilter | None = Field(default=None)
+    filter_applied: str | None = Field(default=None)
     total_expenses: int

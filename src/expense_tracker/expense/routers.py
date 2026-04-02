@@ -107,43 +107,63 @@ def get_expense_by_date(
 def get_expense_summary(
         current_user: CurrentUser,
         db: Annotated[Session, Depends(get_db)],
-        expense_filter: Annotated[expense_schema.ExpenseFilter | None, Query()] = None
+        expense_filter: Annotated[expense_schema.ExpenseFilter | None, Query()] = None,
+        start_date: Annotated[date | None, Query()] = None,
+        end_date: Annotated[date | None, Query()] = None
 ):
 
     base_query = select(expense_model.Expense).where(expense_model.Expense.user_id == current_user.id)
     today = datetime.now(timezone("Asia/Kolkata")).date()
 
-    match expense_filter:
-        case expense_schema.ExpenseFilter.past_week:
-            start_date = today - relativedelta(weeks=1)
-        case expense_schema.ExpenseFilter.past_month:
-            start_date = today - relativedelta(month=1)
-        case expense_schema.ExpenseFilter.last_3_months:
-            start_date = today - relativedelta(months=3)
-        case expense_schema.ExpenseFilter.past_year:
-            start_date = today - relativedelta(years=1)
-        case _:
-            start_date = None
-    
-    if start_date:
-        base_query = base_query.where(expense_model.Expense.expense_date >= start_date)
-    
-    total_amount = db.scalar(
-        select(func.sum(expense_model.Expense.amount))
-        .where(and_(
-            expense_model.Expense.user_id == current_user.id,
-            expense_model.Expense.expense_date >= start_date if start_date else True
-        ))
-    )
+    filter_start_date = None
+    filter_end_date = None
 
-    category_result = db.execute(
-        select(func.sum(expense_model.Expense.amount),expense_model.Expense.category)
-        .where(and_(
-            expense_model.Expense.user_id == current_user.id,
-            expense_model.Expense.expense_date >= start_date if start_date else True
-        ))
-        .group_by(expense_model.Expense.category)
-    ).all()
+    if start_date or end_date:
+        if start_date and end_date and start_date > end_date:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The start date cannot be greater than end date"
+            )
+        filter_start_date = start_date
+        filter_end_date = end_date
+        filter_description = f"Custom: {start_date} to {end_date}"
+
+    else:
+        match expense_filter:
+            case expense_schema.ExpenseFilter.past_week:
+                filter_start_date = today - relativedelta(weeks=1)
+                filter_description = expense_schema.ExpenseFilter.past_week
+            case expense_schema.ExpenseFilter.past_month:
+                filter_start_date = today - relativedelta(months=1)
+                filter_description = expense_schema.ExpenseFilter.past_month
+            case expense_schema.ExpenseFilter.last_3_months:
+                filter_start_date = today - relativedelta(months=3)
+                filter_description = expense_schema.ExpenseFilter.last_3_months
+            case expense_schema.ExpenseFilter.past_year:
+                filter_start_date = today - relativedelta(years=1)
+                filter_description = expense_schema.ExpenseFilter.past_year
+            case _:
+                filter_start_date = None
+    
+    date_condition = []
+    if filter_start_date:
+        base_query = base_query.where(expense_model.Expense.expense_date >= filter_start_date)
+        date_condition.append(expense_model.Expense.expense_date >= filter_start_date)
+    if filter_end_date:
+        base_query = base_query.where(expense_model.Expense.expense_date <= filter_end_date)
+        date_condition.append(expense_model.Expense.expense_date <= filter_end_date)
+    
+    total_amount_query = select(func.sum(expense_model.Expense.amount))
+    if date_condition:
+        total_amount_query = total_amount_query.where(and_(*date_condition))
+    
+    category_spend_query = select(func.sum(expense_model.Expense.amount),expense_model.Expense.category)
+    if date_condition:
+        category_spend_query = category_spend_query.where(and_(*date_condition))
+    category_spend_query = category_spend_query.group_by(expense_model.Expense.category)
+
+    total_amount = db.scalar(total_amount_query)
+    category_result = db.execute(category_spend_query).all()
 
     category_breakdown = expense_schema.ExpenseCategories()
     for amount, category in category_result:
@@ -152,14 +172,14 @@ def get_expense_summary(
     
     expenses = db.scalars(base_query).all()
     expense_summary = expense_schema.ExpenseSummary(
-        total_amount=total_amount,
+        total_amount=total_amount if total_amount else 0,
         category_breakdown=category_breakdown
     )
 
     return expense_schema.SummaryDetails(
        expense_summary=expense_summary,
        all_expenses=expenses,
-       filter_applied=expense_filter.value if expense_filter else None,
+       filter_applied=filter_description if filter_description else None,
        total_expenses=len(expenses)
     )
 
